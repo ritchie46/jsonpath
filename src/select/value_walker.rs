@@ -1,15 +1,41 @@
-use serde_json::Value;
 use std::collections::HashSet;
+
+use serde_json::Value;
 
 pub(super) struct ValueWalker;
 
 impl<'a> ValueWalker {
-    pub fn all_with_num(vec: &[&'a Value], tmp: &mut Vec<&'a Value>, index: f64) {
-        Self::walk(vec, tmp, &|v| if v.is_array() {
-            v.get(index as usize).map(|item| vec![item])
-        } else {
-            None
-        });
+    pub fn all_with_num(mut vec: Vec<&'a Value>, index: f64) -> Vec<&'a Value> {
+        fn _walk_mut<'a>(v: &'a Value, tmp: &mut Vec<&'a Value>, index: f64) {
+            if v.is_array() {
+                if let Some(vv) = v.get(index as usize) {
+                    tmp.push(vv);
+                }
+            }
+
+            match v {
+                Value::Array(vec) => {
+                    for v in vec {
+                        _walk_mut(v, tmp, index);
+                    }
+                }
+                Value::Object(map) => {
+                    for (_, v) in map {
+                        _walk_mut(&v, tmp, index);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let len = vec.len();
+        for i in 0..len {
+            if let Some(value) = vec.get(i) {
+                _walk_mut(value, &mut vec, index)
+            }
+        }
+        vec.drain(0..len);
+        vec
     }
 
     pub fn all_with_str(vec: &[&'a Value], tmp: &mut Vec<&'a Value>, key: &str, is_filter: bool) {

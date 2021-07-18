@@ -251,3 +251,14 @@ fn bugs40_bracket_notation_after_recursive_descent() {
         ]),
     );
 }
+
+#[test]
+fn all_with_num_mut_test() {
+    setup();
+
+    select_and_then_compare(
+        r#"$..[10].id"#,
+        read_json("./benchmark/data_array.json"),
+        json!([0, 0]),
+    );
+}

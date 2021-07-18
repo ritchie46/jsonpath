@@ -314,15 +314,15 @@ impl<'a> FilterTerms<'a> {
         None
     }
 
-    fn collect_all_with_num(&mut self, current: &Option<Vec<&'a Value>>, index: f64) -> Option<Vec<&'a Value>> {
-        if let Some(current) = current {
-            let mut tmp = Vec::new();
-            ValueWalker::all_with_num(&current, &mut tmp, index);
-            return Some(tmp);
+    fn collect_all_with_num(&mut self, mut current: Option<Vec<&'a Value>>, index: f64) -> Option<Vec<&'a Value>> {
+        if let Some(current) = current.take() {
+            let ret = ValueWalker::all_with_num(current, index);
+            if !ret.is_empty() {
+                return Some(ret);
+            }
         }
 
         debug!("collect_all_with_num: {}, {:?}", index, &current);
-
         None
     }
 }
@@ -514,7 +514,7 @@ impl<'a, 'b> Selector<'a, 'b> {
             if let Some(Some(e)) = self.selector_filter.pop_term() {
                 let selector_filter_consumed = match &e {
                     ExprTerm::Number(n) => {
-                        self.current = self.selector_filter.collect_all_with_num(&self.current, to_f64(n));
+                        self.current = self.selector_filter.collect_all_with_num(self.current.take(), to_f64(n));
                         self.selector_filter.pop_term();
                         true
                     }
