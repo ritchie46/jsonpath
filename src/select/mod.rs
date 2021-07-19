@@ -124,9 +124,9 @@ impl<'a> FilterTerms<'a> {
 
     fn push_json_term<F: Fn(&Vec<&'a Value>, &mut Vec<&'a Value>, &mut HashSet<usize>) -> FilterKey>(
         &mut self,
-        current: &Option<Vec<&'a Value>>,
+        current: Option<Vec<&'a Value>>,
         fun: F,
-    ) {
+    ) -> Option<Vec<&'a Value>> {
         debug!("push_json_term: {:?}", &current);
 
         if let Some(current) = &current {
@@ -135,33 +135,40 @@ impl<'a> FilterTerms<'a> {
             let filter_key = fun(current, &mut tmp, &mut not_matched);
             self.0.push(Some(ExprTerm::Json(None, Some(filter_key), tmp)));
         }
+
+        current
     }
 
     fn filter<F: Fn(&Vec<&'a Value>, &mut Vec<&'a Value>, &mut HashSet<usize>) -> FilterKey>(
         &mut self,
-        current: &Option<Vec<&'a Value>>,
+        current: Option<Vec<&'a Value>>,
         fun: F,
-    ) {
-        if let Some(peek) = self.0.pop() {
-            if let Some(e) = peek {
-                self.filter_json_term(e, fun);
-            } else {
-                self.push_json_term(current, fun);
-            }
+    ) -> Option<Vec<&'a Value>> {
+        let peek = self.0.pop();
+
+        if let Some(None) = peek {
+            return self.push_json_term(current, fun);
         }
+
+        if let Some(Some(e)) = peek {
+            self.filter_json_term(e, fun);
+        }
+
+        current
     }
 
-    fn filter_all_with_str(&mut self, current: &Option<Vec<&'a Value>>, key: &str) {
-        self.filter(current, |vec, tmp, _| {
+    fn filter_all_with_str(&mut self, current: Option<Vec<&'a Value>>, key: &str) -> Option<Vec<&'a Value>> {
+        let current = self.filter(current, |vec, tmp, _| {
             ValueWalker::all_with_str(&vec, tmp, key, true);
             FilterKey::All
         });
 
         debug!("filter_all_with_str : {}, {:?}", key, self.0);
+        current
     }
 
-    fn filter_next_with_str(&mut self, current: &Option<Vec<&'a Value>>, key: &str) {
-        self.filter(current, |vec, tmp, not_matched| {
+    fn filter_next_with_str(&mut self, current: Option<Vec<&'a Value>>, key: &str) -> Option<Vec<&'a Value>> {
+        let current = self.filter(current, |vec, tmp, not_matched| {
             let mut visited = HashSet::new();
             for (idx, v) in vec.iter().enumerate() {
                 match v {
@@ -192,51 +199,48 @@ impl<'a> FilterTerms<'a> {
         });
 
         debug!("filter_next_with_str : {}, {:?}", key, self.0);
+        current
     }
 
-    fn collect_next_with_num(&mut self, current: &Option<Vec<&'a Value>>, index: f64) -> Option<Vec<&'a Value>> {
-        fn _collect<'a>(tmp: &mut Vec<&'a Value>, vec: &'a [Value], index: f64) {
-            let index = abs_index(index as isize, vec.len());
-            if let Some(v) = vec.get(index) {
-                tmp.push(v);
-            }
+    fn collect_next_with_num(&mut self, current: Option<Vec<&'a Value>>, index: f64) -> Option<Vec<&'a Value>> {
+        
+        if current.is_none() {
+            debug!("collect_next_with_num : {:?}, {:?}", &index, &current);
+            return current;
         }
 
-        if let Some(current) = current {
-            let mut tmp = Vec::new();
-            for c in current {
-                match c {
-                    Value::Object(map) => {
-                        for k in map.keys() {
-                            if let Some(Value::Array(vec)) = map.get(k) {
-                                _collect(&mut tmp, vec, index);
+        let mut current = current.unwrap();
+        let len = current.len();
+        for i in 0..len {
+            match current[i] {
+                Value::Object(map) => {
+                    for k in map.keys() {
+                        if let Some(Value::Array(vec)) = map.get(k) {
+                            if let Some(v) = vec.get(abs_index(index as isize, vec.len())) {
+                                current.push(v);
                             }
                         }
                     }
-                    Value::Array(vec) => {
-                        _collect(&mut tmp, vec, index);
-                    }
-                    _ => {}
                 }
-            }
-
-            if tmp.is_empty() {
-                self.0.pop();
-                return Some(vec![]);
-            } else {
-                return Some(tmp);
+                Value::Array(vec) => {
+                    if let Some(v) = vec.get(abs_index(index as isize, vec.len())) {
+                        current.push(v);
+                    }
+                }
+                _ => {}
             }
         }
 
-        debug!(
-            "collect_next_with_num : {:?}, {:?}",
-            &index, &current
-        );
+        current.drain(0..len);
 
-        None
+        if current.is_empty() {
+            self.0.pop();
+        }
+
+        Some(current)
     }
 
-    fn collect_next_all(&mut self, current: &Option<Vec<&'a Value>>) -> Option<Vec<&'a Value>> {
+    fn collect_next_all(&mut self, current: Option<Vec<&'a Value>>) -> Option<Vec<&'a Value>> {
         if let Some(current) = current {
             let mut tmp = Vec::new();
             for c in current {
@@ -262,7 +266,7 @@ impl<'a> FilterTerms<'a> {
         None
     }
 
-    fn collect_next_with_str(&mut self, current: &Option<Vec<&'a Value>>, keys: &[String]) -> Option<Vec<&'a Value>> {
+    fn collect_next_with_str(&mut self, current: Option<Vec<&'a Value>>, keys: &[String]) -> Option<Vec<&'a Value>> {
         if let Some(current) = current {
             let mut tmp = Vec::new();
             for c in current {
@@ -291,7 +295,7 @@ impl<'a> FilterTerms<'a> {
         None
     }
 
-    fn collect_all(&mut self, current: &Option<Vec<&'a Value>>) -> Option<Vec<&'a Value>> {
+    fn collect_all(&mut self, current: Option<Vec<&'a Value>>) -> Option<Vec<&'a Value>> {
         if let Some(current) = current {
             let mut tmp = Vec::new();
             ValueWalker::all(&current, &mut tmp);
@@ -302,7 +306,7 @@ impl<'a> FilterTerms<'a> {
         None
     }
 
-    fn collect_all_with_str(&mut self, current: &Option<Vec<&'a Value>>, key: &str) -> Option<Vec<&'a Value>> {
+    fn collect_all_with_str(&mut self, current: Option<Vec<&'a Value>>, key: &str) -> Option<Vec<&'a Value>> {
         if let Some(current) = current {
             let mut tmp = Vec::new();
             ValueWalker::all_with_str(&current, &mut tmp, key, false);
@@ -488,7 +492,7 @@ impl<'a, 'b> Selector<'a, 'b> {
             let array_token = self.tokens.pop();
             if let Some(ParseToken::Leaves) = self.tokens.last() {
                 self.tokens.pop();
-                self.current = self.selector_filter.collect_all(&self.current);
+                self.current = self.selector_filter.collect_all(self.current.take());
             }
             self.tokens.push(array_token.unwrap());
         }
@@ -499,7 +503,7 @@ impl<'a, 'b> Selector<'a, 'b> {
         if self.is_last_before_token_match(ParseToken::Array) {
             if let Some(Some(e)) = self.selector_filter.pop_term() {
                 if let ExprTerm::String(key) = e {
-                    self.selector_filter.filter_next_with_str(&self.current, &key);
+                    self.current = self.selector_filter.filter_next_with_str(self.current.take(), &key);
                     self.tokens.pop();
                     return;
                 }
@@ -519,7 +523,7 @@ impl<'a, 'b> Selector<'a, 'b> {
                         true
                     }
                     ExprTerm::String(key) => {
-                        self.current = self.selector_filter.collect_all_with_str(&self.current, key);
+                        self.current = self.selector_filter.collect_all_with_str(self.current.take(), key);
                         self.selector_filter.pop_term();
                         true
                     }
@@ -538,10 +542,10 @@ impl<'a, 'b> Selector<'a, 'b> {
         if let Some(Some(e)) = self.selector_filter.pop_term() {
             match e {
                 ExprTerm::Number(n) => {
-                    self.current = self.selector_filter.collect_next_with_num(&self.current, to_f64(&n));
+                    self.current = self.selector_filter.collect_next_with_num(self.current.take(), to_f64(&n));
                 }
                 ExprTerm::String(key) => {
-                    self.current = self.selector_filter.collect_next_with_str(&self.current, &[key]);
+                    self.current = self.selector_filter.collect_next_with_str(self.current.take(), &[key]);
                 }
                 ExprTerm::Json(rel, _, v) => {
                     if v.is_empty() {
@@ -578,14 +582,14 @@ impl<'a, 'b> Selector<'a, 'b> {
         match self.tokens.last() {
             Some(ParseToken::Leaves) => {
                 self.tokens.pop();
-                self.current = self.selector_filter.collect_all(&self.current);
+                self.current = self.selector_filter.collect_all(self.current.take());
             }
             Some(ParseToken::In) => {
                 self.tokens.pop();
-                self.current = self.selector_filter.collect_next_all(&self.current);
+                self.current = self.selector_filter.collect_next_all(self.current.take());
             }
             _ => {
-                self.current = self.selector_filter.collect_next_all(&self.current);
+                self.current = self.selector_filter.collect_next_all(self.current.take());
             }
         }
     }
@@ -600,20 +604,20 @@ impl<'a, 'b> Selector<'a, 'b> {
             if self.selector_filter.is_term_empty() {
                 match t {
                     ParseToken::Leaves => {
-                        self.current = self.selector_filter.collect_all_with_str(&self.current, key)
+                        self.current = self.selector_filter.collect_all_with_str(self.current.take(), key)
                     }
                     ParseToken::In => {
-                        self.current = self.selector_filter.collect_next_with_str(&self.current, &[key.to_string()])
+                        self.current = self.selector_filter.collect_next_with_str(self.current.take(), &[key.to_string()])
                     }
                     _ => {}
                 }
             } else {
                 match t {
                     ParseToken::Leaves => {
-                        self.selector_filter.filter_all_with_str(&self.current, key);
+                        self.current = self.selector_filter.filter_all_with_str(self.current.take(), key);
                     }
                     ParseToken::In => {
-                        self.selector_filter.filter_next_with_str(&self.current, key);
+                        self.current = self.selector_filter.filter_next_with_str(self.current.take(), key);
                     }
                     _ => {}
                 }
@@ -627,7 +631,7 @@ impl<'a, 'b> Selector<'a, 'b> {
         }
 
         if let Some(ParseToken::Array) = self.tokens.pop() {
-            self.current = self.selector_filter.collect_next_with_str(&self.current, keys);
+            self.current = self.selector_filter.collect_next_with_str(self.current.take(), keys);
         } else {
             unreachable!();
         }
