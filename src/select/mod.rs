@@ -85,66 +85,56 @@ impl<'a> FilterTerms<'a> {
         self.0.pop()
     }
 
-    fn filter_json_term<F: Fn(&Vec<&'a Value>, &mut Vec<&'a Value>, &mut HashSet<usize>) -> FilterKey>(
-        &mut self,
-        e: ExprTerm<'a>,
-        fun: F,
-    ) {
+    fn filter_json_term<F>(&mut self, e: ExprTerm<'a>, fun: F) 
+        where F: Fn(Vec<&'a Value>, &mut Option<HashSet<usize>>) -> (FilterKey, Vec<&'a Value>) 
+    {
         debug!("filter_json_term: {:?}", e);
 
         if let ExprTerm::Json(rel, fk, vec) = e {
-            let mut tmp = Vec::new();
-            let mut not_matched = HashSet::new();
-            let filter_key = if let Some(FilterKey::String(key)) = fk {
-                let key_contained = &vec.iter().map(|v| match v {
+            let mut not_matched = Some(HashSet::new());
+            let (filter_key, collected) = if let Some(FilterKey::String(key)) = fk {
+                let tmp = vec.iter().map(|v| match v {
                     Value::Object(map) if map.contains_key(&key) => map.get(&key).unwrap(),
-                    _ => v,
+                    _ => v
                 }).collect();
-                fun(key_contained, &mut tmp, &mut not_matched)
+                fun(tmp, &mut not_matched)
             } else {
-                fun(&vec, &mut tmp, &mut not_matched)
+                fun(vec.to_vec(), &mut not_matched)
             };
 
             if rel.is_some() {
-                self.0.push(Some(ExprTerm::Json(rel, Some(filter_key), tmp)));
+                self.push_term(Some(ExprTerm::Json(rel, Some(filter_key), collected)));
             } else {
-                let filtered: Vec<&Value> = vec.iter().enumerate()
-                    .filter(
-                        |(idx, _)| !not_matched.contains(idx)
-                    )
-                    .map(|(_, v)| *v)
-                    .collect();
-
-                self.0.push(Some(ExprTerm::Json(Some(filtered), Some(filter_key), tmp)));
+                let not_matched = not_matched.unwrap();
+                let filtered = vec.iter().enumerate()
+                    .filter(|(idx, _)| !not_matched.contains(&idx))
+                    .map(|(_, v)| *v).collect();
+                self.push_term(Some(ExprTerm::Json(Some(filtered), Some(filter_key), collected)));
             }
         } else {
             unreachable!("unexpected: ExprTerm: {:?}", e);
         }
     }
 
-    fn push_json_term<F: Fn(&Vec<&'a Value>, &mut Vec<&'a Value>, &mut HashSet<usize>) -> FilterKey>(
-        &mut self,
-        current: Option<Vec<&'a Value>>,
-        fun: F,
-    ) -> Option<Vec<&'a Value>> {
+    fn push_json_term<F>(&mut self, current: Option<Vec<&'a Value>>, fun: F) -> Option<Vec<&'a Value>> 
+        where F: Fn(Vec<&'a Value>, &mut Option<HashSet<usize>>) -> (FilterKey, Vec<&'a Value>)
+    {
         debug!("push_json_term: {:?}", &current);
 
         if let Some(current) = &current {
             let mut tmp = Vec::new();
-            let mut not_matched = HashSet::new();
-            let filter_key = fun(current, &mut tmp, &mut not_matched);
-            self.0.push(Some(ExprTerm::Json(None, Some(filter_key), tmp)));
+            tmp.extend(current);
+            let (filter_key, collected) = fun(tmp, &mut None);
+            self.push_term(Some(ExprTerm::Json(None, Some(filter_key), collected)));
         }
 
         current
     }
 
-    fn filter<F: Fn(&Vec<&'a Value>, &mut Vec<&'a Value>, &mut HashSet<usize>) -> FilterKey>(
-        &mut self,
-        current: Option<Vec<&'a Value>>,
-        fun: F,
-    ) -> Option<Vec<&'a Value>> {
-        let peek = self.0.pop();
+    fn filter<F>(&mut self, current: Option<Vec<&'a Value>>, fun: F) -> Option<Vec<&'a Value>> 
+        where F: Fn(Vec<&'a Value>, &mut Option<HashSet<usize>>) -> (FilterKey, Vec<&'a Value>)
+    {
+        let peek = self.pop_term();
 
         if let Some(None) = peek {
             return self.push_json_term(current, fun);
@@ -158,9 +148,8 @@ impl<'a> FilterTerms<'a> {
     }
 
     fn filter_all_with_str(&mut self, current: Option<Vec<&'a Value>>, key: &str) -> Option<Vec<&'a Value>> {
-        let current = self.filter(current, |vec, tmp, _| {
-            ValueWalker::all_with_str(&vec, tmp, key, true);
-            FilterKey::All
+        let current = self.filter(current, |vec, _| {
+            (FilterKey::All, ValueWalker::all_with_str(vec, key, true))
         });
 
         debug!("filter_all_with_str : {}, {:?}", key, self.0);
@@ -168,34 +157,36 @@ impl<'a> FilterTerms<'a> {
     }
 
     fn filter_next_with_str(&mut self, current: Option<Vec<&'a Value>>, key: &str) -> Option<Vec<&'a Value>> {
-        let current = self.filter(current, |vec, tmp, not_matched| {
+        let current = self.filter(current, |mut vec, not_matched| {
             let mut visited = HashSet::new();
-            for (idx, v) in vec.iter().enumerate() {
-                match v {
+            let len = vec.len();
+            for idx in 0..len {
+                match vec[idx] {
                     Value::Object(map) => {
                         if map.contains_key(key) {
-                            let ptr = *v as *const Value;
+                            let ptr = vec[idx] as *const Value;
                             if !visited.contains(&ptr) {
                                 visited.insert(ptr);
-                                tmp.push(v)
+                                vec.push(&vec[idx])
                             }
                         } else {
-                            not_matched.insert(idx);
+                            if let Some(set) = not_matched { set.insert(idx); }
                         }
                     }
-                    Value::Array(vec) => {
-                        not_matched.insert(idx);
-                        for v in vec {
-                            ValueWalker::walk_dedup(v, tmp, key, &mut visited);
+                    Value::Array(ay) => {
+                        if let Some(set) = not_matched { set.insert(idx); }
+                        for v in ay {
+                            ValueWalker::walk_dedup(v, &mut vec, key, &mut visited);
                         }
                     }
                     _ => {
-                        not_matched.insert(idx);
+                        if let Some(set) = not_matched { set.insert(idx); }
                     }
                 }
             }
+            vec.drain(0..len);
 
-            FilterKey::String(key.to_owned())
+            (FilterKey::String(key.to_owned()), vec)
         });
 
         debug!("filter_next_with_str : {}, {:?}", key, self.0);
@@ -233,7 +224,7 @@ impl<'a> FilterTerms<'a> {
         current.drain(0..len);
 
         if current.is_empty() {
-            self.0.pop();
+            self.pop_term();
         }
 
         Some(current)
@@ -284,7 +275,7 @@ impl<'a> FilterTerms<'a> {
         current.drain(0..len);
 
         if current.is_empty() {
-            self.0.pop();
+            self.pop_term();
         }
 
         Some(current)
@@ -301,15 +292,15 @@ impl<'a> FilterTerms<'a> {
     }
 
     fn collect_all_with_str(&mut self, current: Option<Vec<&'a Value>>, key: &str) -> Option<Vec<&'a Value>> {
-        if let Some(current) = current {
-            let mut tmp = Vec::new();
-            ValueWalker::all_with_str(&current, &mut tmp, key, false);
-            return Some(tmp);
+        
+        if current.is_none() {
+            debug!("collect_all_with_str: {}, {:?}", key, &current);
+            return current;
         }
 
-        debug!("collect_all_with_str: {}, {:?}", key, &current);
-
-        None
+        let ret = ValueWalker::all_with_str(current.unwrap(), key, false);
+        Some(ret)
+        
     }
 
     fn collect_all_with_num(&mut self, mut current: Option<Vec<&'a Value>>, index: f64) -> Option<Vec<&'a Value>> {
