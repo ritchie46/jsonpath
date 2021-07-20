@@ -230,7 +230,6 @@ impl<'a> FilterTerms<'a> {
                 _ => {}
             }
         }
-
         current.drain(0..len);
 
         if current.is_empty() {
@@ -241,69 +240,64 @@ impl<'a> FilterTerms<'a> {
     }
 
     fn collect_next_all(&mut self, current: Option<Vec<&'a Value>>) -> Option<Vec<&'a Value>> {
-        if let Some(current) = current {
-            let mut tmp = Vec::new();
-            for c in current {
-                match c {
-                    Value::Object(map) => {
-                        for (_, v) in map {
-                            tmp.push(v)
-                        }
-                    }
-                    Value::Array(vec) => {
-                        for v in vec {
-                            tmp.push(v);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            return Some(tmp);
+
+        if current.is_none() {
+            debug!("collect_next_all : {:?}", &current);
+            return current;
         }
 
-        debug!("collect_next_all : {:?}", &current);
-
-        None
+        let mut current = current.unwrap();
+        let len = current.len();
+        for i in 0..len {
+            match current[i] {
+                Value::Object(map) => current.extend(map.values()),
+                Value::Array(vec) => current.extend(vec),
+                _ => {}
+            }
+        }
+        current.drain(0..len);
+        
+        Some(current)
     }
 
     fn collect_next_with_str(&mut self, current: Option<Vec<&'a Value>>, keys: &[String]) -> Option<Vec<&'a Value>> {
-        if let Some(current) = current {
-            let mut tmp = Vec::new();
-            for c in current {
-                if let Value::Object(map) = c {
-                    for key in keys {
-                        if let Some(v) = map.get(key) {
-                            tmp.push(v)
-                        }
+        
+        if current.is_none() {
+            debug!(
+                "collect_next_with_str : {:?}, {:?}",
+                keys, &current
+            );
+            return current;
+        }
+
+        let mut current = current.unwrap();
+        let len = current.len();
+        for i in 0..len {
+            if let Value::Object(map) = current[i] {
+                for key in keys {
+                    if let Some(v) = map.get(key) {
+                        current.push(v)
                     }
                 }
             }
+        }
+        current.drain(0..len);
 
-            if tmp.is_empty() {
-                self.0.pop();
-                return Some(vec![]);
-            } else {
-                return Some(tmp);
-            }
+        if current.is_empty() {
+            self.0.pop();
         }
 
-        debug!(
-            "collect_next_with_str : {:?}, {:?}",
-            keys, &current
-        );
-
-        None
+        Some(current)
     }
 
     fn collect_all(&mut self, current: Option<Vec<&'a Value>>) -> Option<Vec<&'a Value>> {
-        if let Some(current) = current {
-            let mut tmp = Vec::new();
-            ValueWalker::all(&current, &mut tmp);
-            return Some(tmp);
+        
+        if current.is_none() {
+            debug!("collect_all: {:?}", &current);
+            return current;
         }
-        debug!("collect_all: {:?}", &current);
 
-        None
+        Some(ValueWalker::all(current.unwrap()))
     }
 
     fn collect_all_with_str(&mut self, current: Option<Vec<&'a Value>>, key: &str) -> Option<Vec<&'a Value>> {

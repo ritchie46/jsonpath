@@ -52,18 +52,37 @@ impl<'a> ValueWalker {
         }
     }
 
-    pub fn all(vec: &[&'a Value], tmp: &mut Vec<&'a Value>) {
-        Self::walk(vec, tmp, &|v| match v {
-            Value::Array(vec) => Some(vec.iter().collect()),
-            Value::Object(map) => {
-                let mut tmp = Vec::new();
-                for (_, v) in map {
-                    tmp.push(v);
+    pub fn all(mut vec: Vec<&'a Value>) -> Vec<&'a Value> {
+        fn _walk_mut<'a>(v: &'a Value, tmp: &mut Vec<&'a Value>) {
+            match v {
+                Value::Array(vec) => tmp.extend(vec),
+                Value::Object(map) => {
+                    tmp.extend(map.values());
                 }
-                Some(tmp)
+                _ => {},
             }
-            _ => None,
-        });
+
+            match v {
+                Value::Array(vec) => {
+                    for v in vec {
+                        _walk_mut(v, tmp);
+                    }
+                }
+                Value::Object(map) => {
+                    for (_, v) in map {
+                        _walk_mut(&v, tmp);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let len = vec.len();
+        for i in 0..len {
+            _walk_mut(&vec[i], &mut vec);
+        }
+        vec.drain(0..len);
+        vec
     }
 
     fn walk<F>(vec: &[&'a Value], tmp: &mut Vec<&'a Value>, fun: &F) where F: Fn(&Value) -> Option<Vec<&Value>> {
