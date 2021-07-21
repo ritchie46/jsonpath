@@ -6,22 +6,22 @@ pub(super) struct ValueWalker;
 
 impl<'a> ValueWalker {
     pub fn all_with_num(vec: Vec<&'a Value>, index: f64) -> Vec<&'a Value> {
-        Self::walk(vec, &|v, tmp| {
+        Self::walk(vec, &|v, acc| {
             if v.is_array() {
                 if let Some(vv) = v.get(index as usize) {
-                    tmp.push(vv);
+                    acc.push(vv);
                 }
             }
         })
     }
 
     pub fn all_with_str(vec: Vec<&'a Value>, key: &str, is_filter: bool) -> Vec<&'a Value> {
-        Self::walk(vec, &|v, tmp| {
+        Self::walk(vec, &|v, acc| {
             if is_filter {
                 match v {
                     Value::Object(map) => {
                         if let Some(v) = map.get(key) {
-                            tmp.push(v);
+                            acc.push(v);
                         }
                     },
                     _ => {},
@@ -30,7 +30,7 @@ impl<'a> ValueWalker {
                 match v {
                     Value::Object(map) => {
                         if let Some(v) = map.get(key) {
-                            tmp.push(v);
+                            acc.push(v);
                         }
                     },
                     _ => {},
@@ -40,51 +40,48 @@ impl<'a> ValueWalker {
     }
 
     pub fn all(vec: Vec<&'a Value>) -> Vec<&'a Value> {
-        Self::walk(vec, &|v, tmp| {
+        Self::walk(vec, &|v, acc| {
             match v {
-                Value::Array(ay) => tmp.extend(ay),
+                Value::Array(ay) => acc.extend(ay),
                 Value::Object(map) => {
-                    tmp.extend(map.values());
+                    acc.extend(map.values());
                 }
                 _ => {},
             }
         })
     }
 
-    fn walk<F>(mut vec: Vec<&'a Value>, fun: &F) -> Vec<&'a Value>
-        where F: Fn(&'a Value, &mut Vec<&'a Value>) 
+    fn walk<F>(vec: Vec<&'a Value>, fun: &F) -> Vec<&'a Value>
+    where
+        F: Fn(&'a Value, &mut Vec<&'a Value>) ,
     {
-        let len = vec.len();
-        for i in 0..len {
-            Self::_walk(&vec[i], &mut vec, fun);
-        }
-        vec.drain(0..len);
-        vec
+        let mut acc = Vec::new();
+        vec.iter().for_each(|v| {
+            Self::_walk(v, &mut acc, fun);
+        });
+        acc
     }
 
-    fn _walk<F>(v: &'a Value, tmp: &mut Vec<&'a Value>, fun: &F) 
-        where F: Fn(&'a Value, &mut Vec<&'a Value>)
+    fn _walk<F>(v: &'a Value, acc: &mut Vec<&'a Value>, fun: &F)
+    where
+        F: Fn(&'a Value, &mut Vec<&'a Value>),
     {
         
-        fun(v, tmp);
+        fun(v, acc);
 
         match v {
             Value::Array(vec) => {
-                for v in vec {
-                    Self::_walk(v, tmp, fun);
-                }
+                vec.iter().for_each(|v| Self::_walk(v, acc, fun));
             }
             Value::Object(map) => {
-                for (_, v) in map {
-                    Self::_walk(&v, tmp, fun);
-                }
+                map.values().into_iter().for_each(|v| Self::_walk(&v, acc, fun));
             }
             _ => {}
         }
     }
 
     pub fn walk_dedup(v: &'a Value,
-                      tmp: &mut Vec<&'a Value>,
+                      acc: &mut Vec<&'a Value>,
                       key: &str,
                       visited: &mut HashSet<*const Value>, ) {
         match v {
@@ -93,13 +90,13 @@ impl<'a> ValueWalker {
                     let ptr = v as *const Value;
                     if !visited.contains(&ptr) {
                         visited.insert(ptr);
-                        tmp.push(v)
+                        acc.push(v)
                     }
                 }
             }
             Value::Array(vec) => {
                 for v in vec {
-                    Self::walk_dedup(v, tmp, key, visited);
+                    Self::walk_dedup(v, acc, key, visited);
                 }
             }
             _ => {}

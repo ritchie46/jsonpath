@@ -86,7 +86,8 @@ impl<'a> FilterTerms<'a> {
     }
 
     fn filter_json_term<F>(&mut self, e: ExprTerm<'a>, fun: F) 
-        where F: Fn(Vec<&'a Value>, &mut Option<HashSet<usize>>) -> (FilterKey, Vec<&'a Value>) 
+    where
+        F: Fn(Vec<&'a Value>, &mut Option<HashSet<usize>>) -> (FilterKey, Vec<&'a Value>),
     {
         debug!("filter_json_term: {:?}", e);
 
@@ -117,14 +118,13 @@ impl<'a> FilterTerms<'a> {
     }
 
     fn push_json_term<F>(&mut self, current: Option<Vec<&'a Value>>, fun: F) -> Option<Vec<&'a Value>> 
-        where F: Fn(Vec<&'a Value>, &mut Option<HashSet<usize>>) -> (FilterKey, Vec<&'a Value>)
+    where
+        F: Fn(Vec<&'a Value>, &mut Option<HashSet<usize>>) -> (FilterKey, Vec<&'a Value>),
     {
         debug!("push_json_term: {:?}", &current);
 
         if let Some(current) = &current {
-            let mut tmp = Vec::new();
-            tmp.extend(current);
-            let (filter_key, collected) = fun(tmp, &mut None);
+            let (filter_key, collected) = fun(current.to_vec(), &mut None);
             self.push_term(Some(ExprTerm::Json(None, Some(filter_key), collected)));
         }
 
@@ -132,7 +132,8 @@ impl<'a> FilterTerms<'a> {
     }
 
     fn filter<F>(&mut self, current: Option<Vec<&'a Value>>, fun: F) -> Option<Vec<&'a Value>> 
-        where F: Fn(Vec<&'a Value>, &mut Option<HashSet<usize>>) -> (FilterKey, Vec<&'a Value>)
+    where
+        F: Fn(Vec<&'a Value>, &mut Option<HashSet<usize>>) -> (FilterKey, Vec<&'a Value>),
     {
         let peek = self.pop_term();
 
@@ -157,17 +158,17 @@ impl<'a> FilterTerms<'a> {
     }
 
     fn filter_next_with_str(&mut self, current: Option<Vec<&'a Value>>, key: &str) -> Option<Vec<&'a Value>> {
-        let current = self.filter(current, |mut vec, not_matched| {
+        let current = self.filter(current, |vec, not_matched| {
             let mut visited = HashSet::new();
-            let len = vec.len();
-            for idx in 0..len {
-                match vec[idx] {
+            let mut acc = Vec::new();
+            vec.iter().enumerate().for_each(|(idx, v)| {
+                match v {
                     Value::Object(map) => {
                         if map.contains_key(key) {
-                            let ptr = vec[idx] as *const Value;
+                            let ptr = *v as *const Value;
                             if !visited.contains(&ptr) {
                                 visited.insert(ptr);
-                                vec.push(&vec[idx])
+                                acc.push(*v)
                             }
                         } else {
                             if let Some(set) = not_matched { set.insert(idx); }
@@ -176,17 +177,16 @@ impl<'a> FilterTerms<'a> {
                     Value::Array(ay) => {
                         if let Some(set) = not_matched { set.insert(idx); }
                         for v in ay {
-                            ValueWalker::walk_dedup(v, &mut vec, key, &mut visited);
+                            ValueWalker::walk_dedup(v, &mut acc, key, &mut visited);
                         }
                     }
                     _ => {
                         if let Some(set) = not_matched { set.insert(idx); }
                     }
                 }
-            }
-            vec.drain(0..len);
+            });
 
-            (FilterKey::String(key.to_owned()), vec)
+            (FilterKey::String(key.to_owned()), acc)
         });
 
         debug!("filter_next_with_str : {}, {:?}", key, self.0);
@@ -200,34 +200,32 @@ impl<'a> FilterTerms<'a> {
             return current;
         }
 
-        let mut current = current.unwrap();
-        let len = current.len();
-        for i in 0..len {
-            match current[i] {
+        let mut acc = Vec::new();
+        current.unwrap().iter().for_each(|v| {
+            match v {
                 Value::Object(map) => {
                     for k in map.keys() {
                         if let Some(Value::Array(vec)) = map.get(k) {
                             if let Some(v) = vec.get(abs_index(index as isize, vec.len())) {
-                                current.push(v);
+                                acc.push(v);
                             }
                         }
                     }
                 }
                 Value::Array(vec) => {
                     if let Some(v) = vec.get(abs_index(index as isize, vec.len())) {
-                        current.push(v);
+                        acc.push(v);
                     }
                 }
                 _ => {}
             }
-        }
-        current.drain(0..len);
+        });
 
-        if current.is_empty() {
+        if acc.is_empty() {
             self.pop_term();
         }
 
-        Some(current)
+        Some(acc)
     }
 
     fn collect_next_all(&mut self, current: Option<Vec<&'a Value>>) -> Option<Vec<&'a Value>> {
@@ -237,18 +235,16 @@ impl<'a> FilterTerms<'a> {
             return current;
         }
 
-        let mut current = current.unwrap();
-        let len = current.len();
-        for i in 0..len {
-            match current[i] {
-                Value::Object(map) => current.extend(map.values()),
-                Value::Array(vec) => current.extend(vec),
+        let mut acc = Vec::new();
+        current.unwrap().iter().for_each(|v| {
+            match v {
+                Value::Object(map) => acc.extend(map.values()),
+                Value::Array(vec) => acc.extend(vec),
                 _ => {}
             }
-        }
-        current.drain(0..len);
-        
-        Some(current)
+        });
+
+        Some(acc)
     }
 
     fn collect_next_with_str(&mut self, current: Option<Vec<&'a Value>>, keys: &[String]) -> Option<Vec<&'a Value>> {
@@ -261,24 +257,22 @@ impl<'a> FilterTerms<'a> {
             return current;
         }
 
-        let mut current = current.unwrap();
-        let len = current.len();
-        for i in 0..len {
-            if let Value::Object(map) = current[i] {
+        let mut acc = Vec::new();
+        current.unwrap().iter().for_each(|v| {
+            if let Value::Object(map) = v {
                 for key in keys {
                     if let Some(v) = map.get(key) {
-                        current.push(v)
+                        acc.push(v)
                     }
                 }
             }
-        }
-        current.drain(0..len);
+        });
 
-        if current.is_empty() {
+        if acc.is_empty() {
             self.pop_term();
         }
 
-        Some(current)
+        Some(acc)
     }
 
     fn collect_all(&mut self, current: Option<Vec<&'a Value>>) -> Option<Vec<&'a Value>> {
