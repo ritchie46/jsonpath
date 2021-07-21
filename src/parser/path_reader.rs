@@ -1,4 +1,6 @@
 use std::result::Result;
+use std::str::Chars;
+use std::iter::Peekable;
 
 #[derive(Debug, PartialEq)]
 pub enum ReaderError {
@@ -8,42 +10,43 @@ pub enum ReaderError {
 pub struct PathReader<'a> {
     input: &'a str,
     pos: usize,
+    chars: Peekable<Chars<'a>>,
 }
 
 impl<'a> PathReader<'a> {
     pub fn new(input: &'a str) -> Self {
-        PathReader { input, pos: 0 }
+        PathReader { input, pos: 0, chars: input.chars().peekable() }
     }
 
-    pub fn peek_char(&self) -> Result<(usize, char), ReaderError> {
-        let ch = self.input.chars().next().ok_or(ReaderError::Eof)?;
-        Ok((self.pos + ch.len_utf8(), ch))
+    pub fn peek_char(&mut self) -> Result<char, ReaderError> {
+        let ch = self.chars.peek().ok_or(ReaderError::Eof)?;
+        Ok(*ch)
     }
 
     pub fn take_while<F>(&mut self, fun: F) -> Result<(usize, String), ReaderError>
     where
         F: Fn(&char) -> bool,
     {
+
         let mut char_len: usize = 0;
-        let mut ret = String::new();
-        for c in self.input.chars().by_ref() {
-            if !fun(&c) {
+        while let Some(c) = self.chars.peek() {
+            if !fun(c) {
                 break;
             }
-            char_len += c.len_utf8();
-            ret.push(c);
+            char_len += self.chars.next().unwrap().len_utf8();
         }
 
         self.pos += char_len;
+        let ret = &self.input[..char_len];
         self.input = &self.input[char_len..];
-        Ok((self.pos, ret))
+        Ok((self.pos, ret.to_string()))
     }
 
     pub fn next_char(&mut self) -> Result<(usize, char), ReaderError> {
-        let (_, ch) = self.peek_char()?;
-        self.input = &self.input[ch.len_utf8()..];
+        let ch = self.chars.next().ok_or(ReaderError::Eof)?;
         let ret = Ok((self.pos, ch));
         self.pos += ch.len_utf8();
+        self.input = &self.input[ch.len_utf8()..];
         ret
     }
 

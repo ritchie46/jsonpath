@@ -168,7 +168,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn equal(&mut self, pos: usize, _: char) -> Result<Token, TokenError> {
-        let (_, ch) = self.input.peek_char().map_err(to_token_error)?;
+        let ch = self.input.peek_char().map_err(to_token_error)?;
         match ch {
             CH_EQUAL => {
                 self.input.next_char().map_err(to_token_error)?;
@@ -179,7 +179,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn not_equal(&mut self, pos: usize, _: char) -> Result<Token, TokenError> {
-        let (_, ch) = self.input.peek_char().map_err(to_token_error)?;
+        let ch = self.input.peek_char().map_err(to_token_error)?;
         match ch {
             CH_EQUAL => {
                 self.input.next_char().map_err(to_token_error)?;
@@ -190,7 +190,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn little(&mut self, pos: usize, _: char) -> Result<Token, TokenError> {
-        let (_, ch) = self.input.peek_char().map_err(to_token_error)?;
+        let ch = self.input.peek_char().map_err(to_token_error)?;
         match ch {
             CH_EQUAL => {
                 self.input.next_char().map_err(to_token_error)?;
@@ -201,7 +201,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn greater(&mut self, pos: usize, _: char) -> Result<Token, TokenError> {
-        let (_, ch) = self.input.peek_char().map_err(to_token_error)?;
+        let ch = self.input.peek_char().map_err(to_token_error)?;
         match ch {
             CH_EQUAL => {
                 self.input.next_char().map_err(to_token_error)?;
@@ -212,7 +212,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn and(&mut self, pos: usize, _: char) -> Result<Token, TokenError> {
-        let (_, ch) = self.input.peek_char().map_err(to_token_error)?;
+        let ch = self.input.peek_char().map_err(to_token_error)?;
         match ch {
             CH_AMPERSAND => {
                 let _ = self.input.next_char().map_err(to_token_error);
@@ -223,7 +223,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn or(&mut self, pos: usize, _: char) -> Result<Token, TokenError> {
-        let (_, ch) = self.input.peek_char().map_err(to_token_error)?;
+        let ch = self.input.peek_char().map_err(to_token_error)?;
         match ch {
             CH_PIPE => {
                 self.input.next_char().map_err(to_token_error)?;
