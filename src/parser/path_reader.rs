@@ -23,7 +23,7 @@ impl<'a> PathReader<'a> {
         Ok(*ch)
     }
 
-    pub fn take_while<F>(&mut self, fun: F) -> Result<(usize, String), ReaderError>
+    pub fn take_while<F>(&mut self, fun: F) -> Result<(usize, &str), ReaderError>
     where
         F: Fn(&char) -> bool,
     {
@@ -37,9 +37,8 @@ impl<'a> PathReader<'a> {
         }
 
         self.pos += char_len;
-        let ret = &self.input[..char_len];
         self.input = &self.input[char_len..];
-        Ok((self.pos, ret.to_string()))
+        Ok((self.pos, &self.input[..char_len]))
     }
 
     pub fn next_char(&mut self) -> Result<(usize, char), ReaderError> {

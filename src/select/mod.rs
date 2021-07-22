@@ -247,7 +247,7 @@ impl<'a> FilterTerms<'a> {
         Some(acc)
     }
 
-    fn collect_next_with_str(&mut self, current: Option<Vec<&'a Value>>, keys: &[String]) -> Option<Vec<&'a Value>> {
+    fn collect_next_with_str(&mut self, current: Option<Vec<&'a Value>>, keys: &[&str]) -> Option<Vec<&'a Value>> {
         
         if current.is_none() {
             debug!(
@@ -261,7 +261,7 @@ impl<'a> FilterTerms<'a> {
         current.unwrap().iter().for_each(|v| {
             if let Value::Object(map) = v {
                 for key in keys {
-                    if let Some(v) = map.get(key) {
+                    if let Some(v) = map.get(key as &str) {
                         acc.push(v)
                     }
                 }
@@ -312,10 +312,10 @@ impl<'a> FilterTerms<'a> {
 
 #[derive(Debug, Default)]
 pub struct Selector<'a, 'b> {
-    node: Option<Node>,
-    node_ref: Option<&'b Node>,
+    node: Option<Node<'a>>,
+    node_ref: Option<&'b Node<'b>>,
     value: Option<&'a Value>,
-    tokens: Vec<ParseToken>,
+    tokens: Vec<&'a ParseToken<'a>>,
     current: Option<Vec<&'a Value>>,
     selectors: Vec<Selector<'a, 'b>>,
     selector_filter: FilterTerms<'a>,
@@ -326,7 +326,7 @@ impl<'a, 'b> Selector<'a, 'b> {
         Self::default()
     }
 
-    pub fn str_path(&mut self, path: &str) -> Result<&mut Self, JsonPathError> {
+    pub fn str_path(&mut self, path: &'a str) -> Result<&mut Self, JsonPathError> {
         debug!("path : {}", path);
         self.node_ref.take();
         self.node = Some(Parser::compile(path).map_err(JsonPathError::Path)?);
@@ -479,7 +479,7 @@ impl<'a, 'b> Selector<'a, 'b> {
     }
 
     fn visit_array_eof(&mut self) {
-        if self.is_last_before_token_match(ParseToken::Array) {
+        if self.is_last_before_token_match(&ParseToken::Array) {
             if let Some(Some(e)) = self.selector_filter.pop_term() {
                 if let ExprTerm::String(key) = e {
                     self.current = self.selector_filter.filter_next_with_str(self.current.take(), &key);
@@ -491,7 +491,7 @@ impl<'a, 'b> Selector<'a, 'b> {
             }
         }
 
-        if self.is_last_before_token_match(ParseToken::Leaves) {
+        if self.is_last_before_token_match(&ParseToken::Leaves) {
             self.tokens.pop();
             self.tokens.pop();
             if let Some(Some(e)) = self.selector_filter.pop_term() {
@@ -524,7 +524,7 @@ impl<'a, 'b> Selector<'a, 'b> {
                     self.current = self.selector_filter.collect_next_with_num(self.current.take(), to_f64(&n));
                 }
                 ExprTerm::String(key) => {
-                    self.current = self.selector_filter.collect_next_with_str(self.current.take(), &[key]);
+                    self.current = self.selector_filter.collect_next_with_str(self.current.take(), &[&key]);
                 }
                 ExprTerm::Json(rel, _, v) => {
                     if v.is_empty() {
@@ -545,7 +545,7 @@ impl<'a, 'b> Selector<'a, 'b> {
         self.tokens.pop();
     }
 
-    fn is_last_before_token_match(&mut self, token: ParseToken) -> bool {
+    fn is_last_before_token_match(&mut self, token: &ParseToken) -> bool {
         if self.tokens.len() > 1 {
             return token == self.tokens[self.tokens.len() - 2];
         }
@@ -586,7 +586,7 @@ impl<'a, 'b> Selector<'a, 'b> {
                         self.current = self.selector_filter.collect_all_with_str(self.current.take(), key)
                     }
                     ParseToken::In => {
-                        self.current = self.selector_filter.collect_next_with_str(self.current.take(), &[key.to_string()])
+                        self.current = self.selector_filter.collect_next_with_str(self.current.take(), &[key])
                     }
                     _ => {}
                 }
@@ -604,7 +604,7 @@ impl<'a, 'b> Selector<'a, 'b> {
         }
     }
 
-    fn visit_keys(&mut self, keys: &[String]) {
+    fn visit_keys(&mut self, keys: &[&str]) {
         if !self.selector_filter.is_term_empty() {
             unimplemented!("keys in filter");
         }
@@ -737,7 +737,7 @@ impl<'a, 'b> NodeVisitor for Selector<'a, 'b> {
             ParseToken::Absolute => self.visit_absolute(),
             ParseToken::Relative => self.visit_relative(),
             ParseToken::In | ParseToken::Leaves | ParseToken::Array => {
-                self.tokens.push(token.clone());
+                self.tokens.push(token);
             }
             ParseToken::ArrayEof => self.visit_array_eof(),
             ParseToken::All => self.visit_all(),
@@ -760,8 +760,8 @@ impl<'a, 'b> NodeVisitor for Selector<'a, 'b> {
 }
 
 #[derive(Default)]
-pub struct SelectorMut {
-    path: Option<Node>,
+pub struct SelectorMut<'a> {
+    path: Option<Node<'a>>,
     value: Option<Value>,
 }
 
@@ -820,12 +820,12 @@ fn replace_value<F: FnMut(Value) -> Option<Value>>(
     }
 }
 
-impl SelectorMut {
+impl<'a> SelectorMut<'a> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn str_path(&mut self, path: &str) -> Result<&mut Self, JsonPathError> {
+    pub fn str_path(&mut self, path: &'a str) -> Result<&mut Self, JsonPathError> {
         self.path = Some(Parser::compile(path).map_err(JsonPathError::Path)?);
         Ok(self)
     }

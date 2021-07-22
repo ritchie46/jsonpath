@@ -35,7 +35,7 @@ fn to_token_error(read_err: ReaderError) -> TokenError {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Token {
+pub enum Token<'a> {
     Absolute(usize),
     Dot(usize),
     At(usize),
@@ -47,9 +47,9 @@ pub enum Token {
     Split(usize),
     OpenParenthesis(usize),
     CloseParenthesis(usize),
-    Key(usize, String),
-    DoubleQuoted(usize, String),
-    SingleQuoted(usize, String),
+    Key(usize, &'a str),
+    DoubleQuoted(usize, &'a str),
+    SingleQuoted(usize, &'a str),
     Equal(usize),
     GreaterOrEqual(usize),
     Greater(usize),
@@ -61,7 +61,7 @@ pub enum Token {
     Whitespace(usize, usize),
 }
 
-impl Token {
+impl<'a> Token<'a> {
     pub fn is_match_token_type(&self, other: Token) -> bool {
         match self {
             Token::Absolute(_) => matches!(other, Token::Absolute(_)),
@@ -125,7 +125,7 @@ impl<'a> Tokenizer<'a> {
             _ => !c.is_whitespace(),
         };
         let (_, mut vec) = self.input.take_while(fun).map_err(to_token_error)?;
-        vec.insert(0, ch);
+        // vec.insert(0, ch);
 
         if vec.len() == 1 {
             Ok(Token::Absolute(pos))
@@ -134,7 +134,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn quote(&mut self, ch: char) -> Result<String, TokenError> {
+    fn quote(&mut self, ch: char) -> Result<&str, TokenError> {
         let (_, mut val) = self
             .input
             .take_while(|c| *c != ch)
@@ -142,14 +142,14 @@ impl<'a> Tokenizer<'a> {
 
         if let Some('\\') = val.chars().last() {
             self.input.next_char().map_err(to_token_error)?;
-            let _ = val.pop();
+            // let _ = val.pop();
             let (_, val_remain) = self
                 .input
                 .take_while(|c| *c != ch)
                 .map_err(to_token_error)?;
             self.input.next_char().map_err(to_token_error)?;
-            val.push(ch);
-            val.push_str(val_remain.as_str());
+            // val.push(ch);
+            // val.push_str(val_remain.as_str());
         } else {
             self.input.next_char().map_err(to_token_error)?;
         }
@@ -264,7 +264,7 @@ impl<'a> Tokenizer<'a> {
             _ => !c.is_whitespace(),
         };
         let (_, mut vec) = self.input.take_while(fun).map_err(to_token_error)?;
-        vec.insert(0, ch);
+        // vec.insert(0, ch);
         Ok(Token::Key(pos, vec))
     }
 
@@ -304,7 +304,7 @@ pub struct TokenReader<'a> {
     origin_input: &'a str,
     err: TokenError,
     err_pos: usize,
-    tokens: Vec<(usize, Token)>,
+    tokens: Vec<(usize, Token<'a>)>,
     curr_pos: Option<usize>,
 }
 
